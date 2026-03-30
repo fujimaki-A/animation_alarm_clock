@@ -13,6 +13,7 @@ https://youtu.be/aMdnyNK32CE
 * **OLED画面表示**<br>
   設定ページへのQRコード
   年月日、曜日、時間
+![alttext](image/OLED_defalut.jpg)  ![alttext](image/OLED_qr.jpg)
 
 * **アラーム機能**<br>
   オーディオモジュールとスピーカーからはメロディが流れる
