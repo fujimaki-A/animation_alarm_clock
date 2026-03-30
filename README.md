@@ -3,6 +3,9 @@
 
 Web上で設定した時刻にアラームとアニメーションが流れる時計
 
+アラーム1
+https://youtu.be/Kt9Ae2FJ7Ro
+
 アラーム2
 https://youtu.be/aMdnyNK32CE
 ## 主な機能
