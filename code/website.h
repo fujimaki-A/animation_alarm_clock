@@ -165,7 +165,7 @@ const char index_html[] PROGMEM = R"raw(
         <br>
         <div class="weekday-box">
           <label><input type="checkbox" name="mon2" CHK_MON2> 月</label>
-          <label><input type="checkbox" name="tue2" CHK_THU2> 火</label>
+          <label><input type="checkbox" name="tue2" CHK_THE2> 火</label>
           <label><input type="checkbox" name="wed2" CHK_WED2> 水</label>
           <label><input type="checkbox" name="thu2" CHK_THU2> 木</label><br>
           <label><input type="checkbox" name="fri2" CHK_FRI2> 金</label>
