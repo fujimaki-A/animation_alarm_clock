@@ -10,19 +10,24 @@ https://youtu.be/Kt9Ae2FJ7Ro
 https://youtu.be/aMdnyNK32CE
 ## 主な機能
 
-* **OLED画面表示**<br>
-  設定ページへのQRコード
-  年月日、曜日、時間
-![alttext](image/OLED_defalut.jpg)  ![alttext](image/OLED_qr.jpg)
+**OLED画面表示**
+* 設定ページへのQRコード
+* 年月日、曜日、時間
+  
+  ディスプレイの表示
+  ![alttext](image/OLED_display.jpg)
+  
+  QRコードが読み込めている様子
+  ![alttext](image/OLED_qr.jpg)
 
-* **アラーム機能**<br>
-  オーディオモジュールとスピーカーからはメロディが流れる
-  OLED上にアラームと対応したアニメーションが流れる
-  LEDストリップが光る
-  超音波センサーから5㎝以内に手をかざすと止まる
+**アラーム機能**
+* オーディオモジュールとスピーカーからはメロディを再生
+* OLED上にアラームと対応したアニメーションが流れる
+* LEDストリップが光る
+* 超音波センサーから5㎝以内に手をかざすと止まる
 
-* **Webページ**<br>
-  アラームを鳴らす時間、繰り返しの有無や繰り返す曜日の設定が可能
+**Webページ**
+* アラームを鳴らす時間、繰り返しの有無や繰り返す曜日の設定が可能
 
 ## 仕様書
 ### 使用モジュール
@@ -76,8 +81,9 @@ https://youtu.be/aMdnyNK32CE
   LEDストリップの色を管理するためのヘッダーファイル
 
 ### 配線図
-
+![altText](image/Alarm_clock_ブレッドボード.png)
 ### 回路図
+![altText](image/Alarm_clock_回路図.png)
 
 ### フローチャート
 
