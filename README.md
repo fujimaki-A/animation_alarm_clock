@@ -144,7 +144,7 @@ graph TD
     Mode -- 作動中 --> Distance{距離 < 5cm}
     
     Distance -- はい --> Stop[アラームを止める<br>単発なら設定をリセット]
-    Distance -- いいえ --> Play[音楽とアニメ再生<br>LEDストリップの光演出]
+    Distance -- いいえ --> Play[音楽とアニメーション再生<br>LEDストリップの光演出]
     
     Play --> Loop
     Idle --> Loop
@@ -158,7 +158,7 @@ Arduino IDE
 
 ibis Paint
 - イラスト作成アプリ
- - アニメション制作に使用
+ - アニメーション制作に使用
 - [公式サイト](https://ibispaint.com/)
 
 image2cpp
