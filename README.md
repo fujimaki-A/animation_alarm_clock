@@ -175,3 +175,10 @@ image2cpp
 - [楽しいプロジェクト：ウェルカム](https://docs.sunfounder.com/projects/elite-explorer-kit/ja/latest/fun_projects/01_fun_welcome.html)
 - [IoTプロジェクト：シンプルWebサーバー](https://docs.sunfounder.com/projects/elite-explorer-kit/ja/latest/iot_projects/01_iot_webserver.html)
 - [IoTプロジェクト：Weather Timeスクリーン](https://docs.sunfounder.com/projects/elite-explorer-kit/ja/latest/iot_projects/06_iot_weather_oled.html)
+- [回る空うさぎ－原曲動画](https://www.youtube.com/watch?v=CLywtSOj4NA)
+- [回る空うさぎ－参照動画](https://www.youtube.com/watch?v=1sXb8LwUj3U)
+- [千本桜－原曲動画](https://www.youtube.com/watch?v=shs0rAiwsGQ)
+- [千本桜－参照動画](https://www.youtube.com/watch?v=3w8hDz-5e9U)
+
+### バッテリー消費
+現時点でArduino UNO R4 Wifiへの電力供給を2種類のモバイルバッテリーで行った際のおおよその持続時間は、この[5000ｍAのモバイルバッテリー](https://www.elecom.co.jp/products/DE-C37-5000GN.html)では23~24時間ほど、この[10000mAのモバイルバッテリー](https://www.elecom.co.jp/products/DE-C66-10000BK.html)では46時間
