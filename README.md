@@ -3,8 +3,7 @@
 
 Web上で設定した時刻にアラームとアニメーションが流れる時計
 
-アラームの動作
-https://youtu.be/aMdnyNK32CE
+[アラームの動作](https://youtu.be/aMdnyNK32CE)
 
 ## 主な機能
 
@@ -90,7 +89,7 @@ https://youtu.be/aMdnyNK32CE
 
 ![altText](image/Alarm_clock_ブレッドボード.png)
 ### 回路図
-
+![altText](image/Alarm_clock_回路図.png)
 
 ### フローチャート
 
