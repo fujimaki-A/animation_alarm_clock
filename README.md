@@ -3,11 +3,9 @@
 
 Web上で設定した時刻にアラームとアニメーションが流れる時計
 
-アラーム1
-https://youtu.be/Kt9Ae2FJ7Ro
-
-アラーム2
+アラームの動作
 https://youtu.be/aMdnyNK32CE
+
 ## 主な機能
 
 **OLED画面表示**
@@ -22,6 +20,8 @@ https://youtu.be/aMdnyNK32CE
   
   QRコードが読み込めている様子
   ![alttext](image/OLED_qr.jpg)
+
+  ナイトモードの変化
 
 **アラーム機能**
 * オーディオモジュールとスピーカーからはメロディを再生
@@ -84,9 +84,13 @@ https://youtu.be/aMdnyNK32CE
   LEDストリップの色を管理するためのヘッダーファイル
 
 ### 配線図
+> ※配線図上では省略しているがBreadboard Power Module with Batteryを取り付けている
+> ※この配線図はFritzingの都合により、以下の部品を代用品で表現
+> * オーディオモジュール：実際にはHXJ8002を搭載したオーディオボードを使用
+
 ![altText](image/Alarm_clock_ブレッドボード.png)
 ### 回路図
-![altText](image/Alarm_clock_回路図.png)
+
 
 ### フローチャート
 
