@@ -309,11 +309,11 @@ void checkAlarm() {
 void checkForOLED(int currentH, int currentM){
   if (currentH == 23 && currentM == 0){
     display.ssd1306_command(SSD1306_SETCONTRAST);
-    display.ssd1306_command(dark); 
-    isDisplayOn = false;
+    display.ssd1306_command(dark);
   }
   if (currentH == 0 && currentM == 0) {
-    display.ssd1306_command(SSD1306_DISPLAYOFF);
+    display.ssd1306_command(SSD1306_DISPLAYOFF); 
+    isDisplayOn = false;
   }
   if (currentH == 4 && currentM == 30) {
     display.ssd1306_command(SSD1306_DISPLAYON);
