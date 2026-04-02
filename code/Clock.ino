@@ -92,17 +92,17 @@ void setup() {
   Wire.begin();
   Wire.setWireTimeout(100000, true);
   
-  Serial.begin(9600);
+  // Serial.begin(9600);
   
   WiFi.begin(ssid, pass);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
+    // Serial.print(".");
   }
 
-  Serial.println("\nWiFi connected!");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  // Serial.println("\nWiFi connected!");
+  // Serial.print("IP address: ");
+  // Serial.println(WiFi.localIP());
   
   // OLED ディスプレイを初期化して画面をクリア
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
@@ -115,30 +115,30 @@ void setup() {
   timeClient.begin();
   timeClient.setTimeOffset(3600 * 9);  
 
-  Serial.println("NTP同期を試行中...");
+  // Serial.println("NTP同期を試行中...");
 
   while (timeClient.getEpochTime() < 1700000000) {
     timeClient.begin();
     delay(500);
     bool success = timeClient.forceUpdate(); // 強制的に更新をかける
-    if (success) {
-      Serial.println("同期成功！");
-    } else {
-      Serial.print("同期失敗... 再試行中: ");
-      Serial.println(timeClient.getEpochTime());
-    }
+    // if (success) {
+    //   Serial.println("同期成功！");
+    // } else {
+    //   Serial.print("同期失敗... 再試行中: ");
+    //   Serial.println(timeClient.getEpochTime());
+    // }
     delay(2000); // サーバーに負荷をかけないよう2秒待機
   }
 
-  Serial.print("現在の時刻（秒）: ");
-  Serial.println(timeClient.getEpochTime());
+  // Serial.print("現在の時刻（秒）: ");
+  // Serial.println(timeClient.getEpochTime());
   
   // QRコードの設定（動的IPアドレスに対応）
   String url = "http://" + WiFi.localIP().toString();
   qrcode_initText(&qrcode, qrcodeData, 3, ECC_LOW, url.c_str());
   
-  Serial.print("QRコードのURL: ");
-  Serial.println(url);
+  // Serial.print("QRコードのURL: ");
+  // Serial.println(url);
 
   // 超音波モジュールのピンに入出力を設定
   pinMode(echoPin, INPUT);
@@ -160,9 +160,19 @@ void setup() {
 
 void loop() {
   unsigned long currentTime = millis();
-  float distance =readDistance();
+  static unsigned long lastCheckTime = 0;
 
-  checkAlarm();
+  float lastDistance = -1;
+
+  if (currentTime - lastCheckTime >= 500){
+    checkAlarm();
+    if (isAlarm1Active || isAlarm2Active) {
+      lastDistance = readDistance();
+    } else {
+      lastDistance = -1;
+    }
+    lastCheckTime = currentTime;
+  }
 
   WiFiClient client = server.available();
   if (client) {
@@ -241,8 +251,9 @@ void loop() {
     client.stop();
   }
 
-  if ((isAlarm1Active || isAlarm2Active) && distance > 0 && distance < 5) {
+  if ((isAlarm1Active || isAlarm2Active) && lastDistance > 0 && lastDistance < 5) {
     stopAlarm();
+    delay(20);
   } else if (isAlarm1Active) {
     playMusicWithAnime(SONG_1);
     updateLEDs(colorRGB1, 2);
@@ -251,6 +262,10 @@ void loop() {
     updateLEDs(colorRGB2, 3);
   } else {
     stopAlarm();
+    delay(20);
+  }
+  if(!isDisplayOn) {
+    delay(1000);
   }
 }
 
@@ -277,6 +292,7 @@ void checkAlarm() {
         isAlarm1Active = true;
           if (!isDisplayOn) {
             isDisplayOn = true;
+            display.ssd1306_command(SSD1306_DISPLAYON);
           }
         currentNoteIndex = 0;
         lastCheckedMinute = currentM;
@@ -291,6 +307,7 @@ void checkAlarm() {
         currentNoteIndex = 0;
         if (!isDisplayOn) {
           isDisplayOn = true;
+          display.ssd1306_command(SSD1306_DISPLAYON);
         }
         lastCheckedMinute = currentM;
         if (!repeat2_enabled) {
@@ -314,12 +331,12 @@ void checkForOLED(int currentH, int currentM){
     display.ssd1306_command(SSD1306_DISPLAYOFF); 
     isDisplayOn = false;
   }
-  if (currentH == 4 && currentM == 30) {
+  if (currentH == 5 && currentM == 0) {
     display.ssd1306_command(SSD1306_DISPLAYON);
-    isDisplayOn == true;
+    isDisplayOn = true;
     displayData();
   } 
-  if (currentH == 5 && currentM == 30 ){
+  if (currentH == 6 && currentM == 0 ){
     display.ssd1306_command(SSD1306_SETCONTRAST);
     display.ssd1306_command(light); 
   }
@@ -327,94 +344,96 @@ void checkForOLED(int currentH, int currentM){
 
 // 繰り返しの有無や時間を保存する関数
 void parseAlarmSetUp(String line) {
-  if (line.indexOf("h1=") != -1 && line.indexOf("m1=") != -1) {
-    if (line.indexOf("repeat1=on") != -1){
-      repeat1_enabled = true;
-      if (repeat1_enabled){
-        alarm1_days[0] = (line.indexOf("mon1=on") != -1);
-        alarm1_days[1] = (line.indexOf("tue1=on") != -1);
-        alarm1_days[2] = (line.indexOf("wed1=on") != -1);
-        alarm1_days[3] = (line.indexOf("thu1=on") != -1);
-        alarm1_days[4] = (line.indexOf("fri1=on") != -1);
-        alarm1_days[5] = (line.indexOf("sat1=on") != -1);
-        alarm1_days[6] = (line.indexOf("sun1=on") != -1);
-      } else {
-        for(int i = 0; i < 7; i++) alarm1_days[i] = false;
-      }
-    }
-    int hPos = line.indexOf("h1=") + 3;
-    int hEnd = line.indexOf("&", hPos);
-    if (hEnd == -1){
-      hEnd = line.indexOf(" ", hPos); 
-    }
-    int mPos = line.indexOf("m1=") + 3;
-    int mEnd = line.indexOf("&", mPos);
-    if (mEnd == -1){
-      mEnd = line.indexOf(" ", mPos); 
-    }
-    alarm1_h = line.substring(hPos, hEnd).toInt();
-    alarm1_m = line.substring(mPos, mEnd).toInt();
-  }
-  if (line.indexOf("h2=") != -1 && line.indexOf("m2=") != -1) {
-    if (line.indexOf("repeat2=on") != -1){
-      repeat2_enabled = true;
-      if (repeat2_enabled){
-        alarm2_days[0] = (line.indexOf("mon2=on") != -1);
-        alarm2_days[1] = (line.indexOf("tue2=on") != -1);
-        alarm2_days[2] = (line.indexOf("wed2=on") != -1);
-        alarm2_days[3] = (line.indexOf("thu2=on") != -1);
-        alarm2_days[4] = (line.indexOf("fri2=on") != -1);
-        alarm2_days[5] = (line.indexOf("sat2=on") != -1);
-        alarm2_days[6] = (line.indexOf("sun2=on") != -1);
-      } else {
-        for(int i = 0; i < 7; i++) alarm2_days[i] = false;
-      }
-    }
-    int hPos = line.indexOf("h2=") + 3;
-    int hEnd = line.indexOf("&", hPos);
-      if (hEnd == -1){
-        hEnd = line.indexOf(" ", hPos); 
-      }
-    int mPos = line.indexOf("m2=") + 3;
-    int mEnd = line.indexOf("&", mPos);
-    if (mEnd == -1){
-      mEnd = line.indexOf(" ", mPos); 
-    }
-    alarm2_h = line.substring(hPos, hEnd).toInt();
-    alarm2_m = line.substring(mPos, mEnd).toInt();
-  }
   if (line.indexOf("h1=") != -1) {
-    Serial.print("アラーム1 設定時刻: ");
-    Serial.print(alarm1_h);
-    Serial.print(":");
-    Serial.println(alarm1_m);
-    Serial.print("繰り返し: ");
-    Serial.println(repeat1_enabled ? "ON" : "OFF");
+    // 繰り返しの判定
+    repeat1_enabled = (line.indexOf("repeat1=on") != -1);
     if (repeat1_enabled) {
-      Serial.print("曜日: ");
-      const char *dNames[] = {"月", "火", "水", "木", "金", "土", "日"};
-      for (int i = 0; i < 7; i++) {
-        if (alarm1_days[i]) Serial.print(dNames[i]);
-      }
+      alarm1_days[0] = (line.indexOf("mon1=on") != -1);
+      alarm1_days[1] = (line.indexOf("tue1=on") != -1);
+      alarm1_days[2] = (line.indexOf("wed1=on") != -1);
+      alarm1_days[3] = (line.indexOf("thu1=on") != -1);
+      alarm1_days[4] = (line.indexOf("fri1=on") != -1);
+      alarm1_days[5] = (line.indexOf("sat1=on") != -1);
+      alarm1_days[6] = (line.indexOf("sun1=on") != -1);
+    } else {
+      for (int i = 0; i < 7; i++) alarm1_days[i] = false;
     }
-    Serial.println();
+
+    // 数値の切り出し
+    int h1Pos = line.indexOf("h1=") + 3;
+    int h1End = line.indexOf("&", h1Pos);
+    if (h1End == -1) h1End = line.indexOf(" ", h1Pos);
+    
+    int m1Pos = line.indexOf("m1=") + 3;
+    int m1End = line.indexOf("&", m1Pos);
+    if (m1End == -1) m1End = line.indexOf(" ", m1Pos);
+
+    if (h1Pos > 2 && m1Pos > 2) { // 確実に見つかっている場合のみ代入
+      alarm1_h = line.substring(h1Pos, h1End).toInt();
+      alarm1_m = line.substring(m1Pos, m1End).toInt();
+    }
   }
+
+  // アラーム2の解析
   if (line.indexOf("h2=") != -1) {
-    Serial.print("アラーム2 設定時刻: ");
-    Serial.print(alarm2_h);
-    Serial.print(":");
-    Serial.println(alarm2_m);
-    Serial.print("繰り返し: ");
-    Serial.println(repeat2_enabled ? "ON" : "OFF");
+    repeat2_enabled = (line.indexOf("repeat2=on") != -1);
     if (repeat2_enabled) {
-      Serial.print("曜日: ");
-      const char *dNames[] = {"月", "火", "水", "木", "金", "土", "日"};
-      for (int i = 0; i < 7; i++) {
-        if (alarm2_days[i])   Serial.print(dNames[i]);
-      }
+      alarm2_days[0] = (line.indexOf("mon2=on") != -1);
+      alarm2_days[1] = (line.indexOf("tue2=on") != -1);
+      alarm2_days[2] = (line.indexOf("wed2=on") != -1);
+      alarm2_days[3] = (line.indexOf("thu2=on") != -1);
+      alarm2_days[4] = (line.indexOf("fri2=on") != -1);
+      alarm2_days[5] = (line.indexOf("sat2=on") != -1);
+      alarm2_days[6] = (line.indexOf("sun2=on") != -1);
+    } else {
+      for (int i = 0; i < 7; i++) alarm2_days[i] = false;
     }
-    Serial.println();
+
+    int h2Pos = line.indexOf("h2=") + 3;
+    int h2End = line.indexOf("&", h2Pos);
+    if (h2End == -1) h2End = line.indexOf(" ", h2Pos);
+
+    int m2Pos = line.indexOf("m2=") + 3;
+    int m2End = line.indexOf("&", m2Pos);
+    if (m2End == -1) m2End = line.indexOf(" ", m2Pos);
+
+    if (h2Pos > 2 && m2Pos > 2) {
+      alarm2_h = line.substring(h2Pos, h2End).toInt();
+      alarm2_m = line.substring(m2Pos, m2End).toInt();
+    }
   }
+  // if (line.indexOf("h1=") != -1) {
+  //   Serial.print("アラーム1 設定時刻: ");
+  //   Serial.print(alarm1_h);
+  //   Serial.print(":");
+  //   Serial.println(alarm1_m);
+  //   Serial.print("繰り返し: ");
+  //   Serial.println(repeat1_enabled ? "ON" : "OFF");
+  //   if (repeat1_enabled) {
+  //     Serial.print("曜日: ");
+  //     const char *dNames[] = {"月", "火", "水", "木", "金", "土", "日"};
+  //     for (int i = 0; i < 7; i++) {
+  //       if (alarm1_days[i]) Serial.print(dNames[i]);
+  //     }
+  //   }
+  //   Serial.println();
+  // }
+  // if (line.indexOf("h2=") != -1) {
+  //   Serial.print("アラーム2 設定時刻: ");
+  //   Serial.print(alarm2_h);
+  //   Serial.print(":");
+  //   Serial.println(alarm2_m);
+  //   Serial.print("繰り返し: ");
+  //   Serial.println(repeat2_enabled ? "ON" : "OFF");
+  //   if (repeat2_enabled) {
+  //     Serial.print("曜日: ");
+  //     const char *dNames[] = {"月", "火", "水", "木", "金", "土", "日"};
+  //     for (int i = 0; i < 7; i++) {
+  //       if (alarm2_days[i])   Serial.print(dNames[i]);
+  //     }
+  //   }
+  //   Serial.println();
+  // }
 }
 
 // アラームとアニメを流す関数
@@ -522,6 +541,7 @@ void updateLEDs(int colorRGB[][3], int colorNum) {
 // アラームを止めたときの関数
 void stopAlarm() {
   wave.stop();
+  analogWrite(A0, 0);
   isAlarm1Active = false;
   isAlarm2Active = false;
   currentNoteIndex = 0;
@@ -530,7 +550,7 @@ void stopAlarm() {
   FastLED.show();
   time_t rawtime = (time_t)timeClient.getEpochTime();
   struct tm * ti = localtime(&rawtime);
-  if ((ti->tm_hour >= 0 && ti->tm_hour < 4) || (ti->tm_hour == 4 && ti->tm_min <= 30)) {
+  if (ti->tm_hour >= 0 && ti->tm_hour < 5) {
     display.ssd1306_command(SSD1306_DISPLAYOFF);
     isDisplayOn = false;
   } else {
