@@ -114,25 +114,27 @@ graph TD
     Sync -- 完了 --> Disp[QRコードと時刻を表示]
     Disp --> Loop[loop開始]
     
-    Loop --> Sensor[距離センサー読み取り]
+    Loop --> Current{0.5秒経過したか}
+    Current -- はい --> Sensor[距離センサー読み取り]
+    Current -- いいえ --> Web
     
     %% --- 時刻判定と画面制御 ---
     Sensor --> NightMode
     NightMode -- 23:00~ --> Dim[輝度を下げる]
     NightMode -- 00:00~ --> Off[ディスプレイ消灯]
     NightMode -- 05:00~ --> On[ディスプレイ点灯]
-    NightMode -- 06:00~ --> Normal[通常の輝度で表示]
+    NightMode -- 06:00~ --> Nomal[輝度を通常に戻す]
     
     Dim --> TimeMatch
     Off --> TimeMatch
     On --> TimeMatch
-    Normal --> TimeMatch
+    Nomal --> TimeMatch
 
     %% --- アラーム時刻の判定 セクションの書き換え ---
-    TimeMatch{設定した時刻になったか？}
+    TimeMatch{設定した時刻になったか}
     TimeMatch -- はい --> SetActive[アラームを「作動中」に切り替え]
     TimeMatch -- いいえ --> Web
-    SetActive --> DayCheck{今日は繰り返す曜日か？<br>または単発設定か？}
+    SetActive --> DayCheck{今日は繰り返す曜日か<br>または単発設定か}
 
     DayCheck -- 単発 --> Web
     DayCheck -- 繰り返す --> Repeat[繰り返しのアラーム]
@@ -146,11 +148,15 @@ graph TD
     Mode -- 作動中 --> Distance{距離 < 5cm}
     
     Distance -- はい --> Stop[アラームを止める<br>単発なら設定をリセット]
-    Distance -- いいえ --> Play[音楽とアニメーション再生<br>LEDストリップの光演出]
+    Distance -- いいえ --> Play[音楽とアニメ再生<br>LEDストリップの光演出]
     
-    Play --> Loop
-    Idle --> Loop
+    Play --> CheckMODE
+    Idle --> CheckMODE
     Stop --> Idle
+    CheckMODE{ナイトモードか}
+    CheckMODE -- はい --> StandBy[1秒待つ]
+    CheckMODE -- いいえ --> Loop
+    StandBy --> Loop
 ```
 
 ### 使用ツール
