@@ -156,7 +156,7 @@ const char index_html[] PROGMEM = R"raw(
           <span class="colon">:</span>
           <select name="m1" id="m1_select" class="custom-select"></select>分
         </div>
-        <br><br>
+        <br>
         <label class="switch">
           <input type="checkbox" id="repeat1" name="repeat1" CHK_R1>
           <span class="slider"></span>
@@ -186,8 +186,7 @@ const char index_html[] PROGMEM = R"raw(
           <span class="colon">:</span>
           <select name="m2" id="m2_select" class="custom-select"></select>分
         </div>
-
-        <br><br>
+        <br>
         <label class="switch">
           <input type="checkbox" id="repeat2" name="repeat2" CHK_R2>
           <span class="slider"></span>
