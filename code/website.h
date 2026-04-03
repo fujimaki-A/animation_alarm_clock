@@ -152,9 +152,9 @@ const char index_html[] PROGMEM = R"raw(
       <div class="outline-text" style="font-size: 1.2rem; color: #44617b; margin-bottom: 15px;"><b>♪回る空うさぎ</b></div>
       <form action="/save" method="get">
         <div class="time-select-container">
-          <select name="h1" id="h1_select" class="custom-select"></select>時
+          <select name="h1" id="h1_select" class="custom-select">VAL_H1</select>時
           <span class="colon">:</span>
-          <select name="m1" id="m1_select" class="custom-select"></select>分
+          <select name="m1" id="m1_select" class="custom-select">VAL_M1</select>分
         </div>
         <br>
         <label class="switch">
@@ -182,9 +182,9 @@ const char index_html[] PROGMEM = R"raw(
       <div class="outline-text" style="font-size: 1.2rem; color: #fc97ad; margin-bottom: 15px;"><b>♪千本桜</b></div>
       <form action="/save" method="get">
         <div class="time-select-container">
-          <select name="h2" id="h2_select" class="custom-select"></select>時
+          <select name="h2" id="h2_select" class="custom-select">VAL_H2</select>時
           <span class="colon">:</span>
-          <select name="m2" id="m2_select" class="custom-select"></select>分
+          <select name="m2" id="m2_select" class="custom-select">VAL_M2</select>分
         </div>
         <br>
         <label class="switch">
@@ -233,4 +233,4 @@ const char index_html[] PROGMEM = R"raw(
   </html>
 )raw";
 
-#endif  //WEBSITE_H
+#endif // WEBSITE_H

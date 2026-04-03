@@ -4,6 +4,19 @@
 #define NUM_LEDS 8
 #define DATA_PIN 6
 
+// ========== デバッグマクロ ==========
+#define DEBUG 0
+#if DEBUG
+#define DEBUG_PRINT(x) Serial.print(x)
+#define DEBUG_PRINTLN(x) Serial.println(x)
+#define DEBUG_PRINTF(fmt, ...) Serial.printf(fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_PRINT(x)
+#define DEBUG_PRINTLN(x)
+#define DEBUG_PRINTF(fmt, ...)
+#endif
+// =================================
+
 CRGB leds[NUM_LEDS];
 
 unsigned long lastLEDTime = 0;
@@ -24,14 +37,14 @@ WiFiServer server(80);
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "ntp.nict.jp");
 
-// OLED 
+// OLED
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-#define SCREEN_WIDTH 128  // OLED の横幅（ピクセル）
-#define SCREEN_HEIGHT 64  // OLED の高さ（ピクセル）
-#define OLED_RESET -1     // リセットピン番号
+#define SCREEN_WIDTH 128 // OLED の横幅（ピクセル）
+#define SCREEN_HEIGHT 64 // OLED の高さ（ピクセル）
+#define OLED_RESET -1    // リセットピン番号
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
@@ -48,7 +61,7 @@ uint8_t qrcodeData[200];
 // アニメーション
 #include "animation.h"
 
-//超音波モジュール
+// 超音波モジュール
 const int echoPin = 3;
 const int trigPin = 4;
 
@@ -56,10 +69,59 @@ const int trigPin = 4;
 #include "analogWave.h"
 #include "melodies.h"
 
+// アラーム設定構造体
+struct AlarmConfig
+{
+  int hour;
+  int minute;
+  bool days[7];
+  bool repeatEnabled;
+  bool active;
+  const int (*ledColors)[3];
+  int ledColorCount;
+  const ALARM *melody;
+};
+
 analogWave wave(DAC);
 
 // HTML
 #include "website.h"
+
+// ========== 定数定義 ==========
+const unsigned long CHECK_INTERVAL_MS = 500;             // メインループのチェック間隔（アラーム活性時）
+const unsigned long IDLE_CHECK_INTERVAL_MS = 5000;       // メインループのチェック間隔（アラーム非活性時）
+const unsigned long NTP_TIMEOUT_MS = 30000;              // NTP同期のタイムアウト（30秒）
+const unsigned long NTP_RETRY_INTERVAL_MS = 2000;        // NTP再試行間隔
+const unsigned long ANIMATION_INTERVAL_MS = 1000;        // 共通アニメーション間隔（省電力化）
+const unsigned long RABBIT_ANIMATION_INTERVAL_MS = 750;  // うさぎアニメーション間隔
+const unsigned long SAKURA_ANIMATION_INTERVAL_MS = 1000; // さくらアニメーション間隔（省電力化）
+const int LED_BRIGHTNESS = 16;                           // LED輝度 (0-255) 省電力化
+const int DAC_INITIAL_VALUE = 0;                         // DAC初期値
+const int WIFI_TIMEOUT_MS = 30000;                       // WiFi接続タイムアウト
+const int WIFI_RETRY_INTERVAL_MS = 500;                  // WiFi再試行間隔
+const int OLED_CONTRAST_DARK = 0x01;                     // OLED暗いコントラスト
+const int OLED_CONTRAST_LIGHT = 0x7F;                    // OLED明るいコントラスト
+const int DISTANCE_THRESHOLD_CM = 5;                     // アラーム停止距離（cm）
+const time_t NTP_EPOCH_THRESHOLD = 1700000000;           // NTP同期判定閾値
+const int TIMEZONE_OFFSET_HOURS = 9;                     // タイムゾーン（日本時間）
+const int WIRE_TIMEOUT_US = 100000;                      // I2Cタイムアウト（マイクロ秒）
+const int WAIT_TIME_MS = 500;                            // 曲間待機時間
+// =============================
+
+// 関数プロトタイプ宣言
+void displayData();
+void dateTimeData();
+void qrdata();
+float readDistance();
+void checkAlarm();
+void checkForOLED(int currentH, int currentM);
+void parseAlarmSetUp(String line);
+void playMusicWithAnime(const ALARM &melody);
+void commonAnime(unsigned long currentTime);
+void rabitAnime(unsigned long currentTime);
+void sakuraAnime(unsigned long currentTime);
+void updateLEDs(const int colorRGB[][3], int colorNum);
+void stopAlarm();
 
 // アニメとアラームの更新間隔と長さを管理
 unsigned long lastNoteTime = 0;
@@ -72,54 +134,70 @@ bool isAlarmPlaying = false;
 unsigned long waitTime = 500;
 bool isWaitingNextLoop = false;
 
-// アラームをかける時間を保存する変数
-int alarm1_h = -1, alarm1_m = -1;
-bool alarm1_days[7] = {false};
-bool repeat1_enabled = false;
-int alarm2_h = -1, alarm2_m = -1;
-bool alarm2_days[7] = {false};
-bool repeat2_enabled = false;
+// ディスプレイ更新用の前回表示時刻
+int lastDisplayedHour = -1;
+int lastDisplayedMinute = -1;
 
-// アラームを管理する変数
-bool isAlarm1Active = false;
-bool isAlarm2Active = false;
+// アラーム設定構造体のインスタンス
+AlarmConfig alarms[2] = {
+    {.hour = -1,
+     .minute = -1,
+     .days = {false, false, false, false, false, false, false},
+     .repeatEnabled = false,
+     .active = false,
+     .ledColors = colorRGB1,
+     .ledColorCount = 2,
+     .melody = &SONG_1},
+    {.hour = -1,
+     .minute = -1,
+     .days = {false, false, false, false, false, false, false},
+     .repeatEnabled = false,
+     .active = false,
+     .ledColors = colorRGB2,
+     .ledColorCount = 3,
+     .melody = &SONG_2}};
 
 // 時間の更新
 int lastCheckedMinute = -1;
 
-void setup() {
+void setup()
+{
   // 通信にかける時間を調整
   Wire.begin();
   Wire.setWireTimeout(100000, true);
-  
+
   // Serial.begin(9600);
-  
+
   WiFi.begin(ssid, pass);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+  unsigned long wifiStartTime = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStartTime < WIFI_TIMEOUT_MS)
+  {
+    delay(WIFI_RETRY_INTERVAL_MS);
     // Serial.print(".");
   }
 
   // Serial.println("\nWiFi connected!");
   // Serial.print("IP address: ");
   // Serial.println(WiFi.localIP());
-  
+
   // OLED ディスプレイを初期化して画面をクリア
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.ssd1306_command(SSD1306_SETCONTRAST);
-  display.ssd1306_command(light); 
+  display.ssd1306_command(light);
   display.display();
   display.clearDisplay();
 
   // NTP クライアントを初期化
   timeClient.begin();
-  timeClient.setTimeOffset(3600 * 9);  
+  timeClient.setTimeOffset(3600 * 9);
 
   // Serial.println("NTP同期を試行中...");
 
-  while (timeClient.getEpochTime() < 1700000000) {
+  unsigned long ntpStartTime = millis();
+  while (timeClient.getEpochTime() < NTP_EPOCH_THRESHOLD && millis() - ntpStartTime < NTP_TIMEOUT_MS)
+  {
     timeClient.begin();
-    delay(500);
+    delay(WIFI_RETRY_INTERVAL_MS);
     bool success = timeClient.forceUpdate(); // 強制的に更新をかける
     // if (success) {
     //   Serial.println("同期成功！");
@@ -127,16 +205,16 @@ void setup() {
     //   Serial.print("同期失敗... 再試行中: ");
     //   Serial.println(timeClient.getEpochTime());
     // }
-    delay(2000); // サーバーに負荷をかけないよう2秒待機
+    delay(NTP_RETRY_INTERVAL_MS); // サーバーに負荷をかけないよう待機
   }
 
   // Serial.print("現在の時刻（秒）: ");
   // Serial.println(timeClient.getEpochTime());
-  
+
   // QRコードの設定（動的IPアドレスに対応）
   String url = "http://" + WiFi.localIP().toString();
   qrcode_initText(&qrcode, qrcodeData, 3, ECC_LOW, url.c_str());
-  
+
   // Serial.print("QRコードのURL: ");
   // Serial.println(url);
 
@@ -145,12 +223,12 @@ void setup() {
   pinMode(trigPin, OUTPUT);
 
   // DACの設定
-  analogWrite(A0, 0);
+  analogWrite(A0, DAC_INITIAL_VALUE);
   wave.sine(10);
 
   // LEDストリップの初期化
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
-  FastLED.setBrightness(32);
+  FastLED.setBrightness(LED_BRIGHTNESS);
 
   server.begin();
 
@@ -158,92 +236,109 @@ void setup() {
   displayData();
 }
 
-void loop() {
+void loop()
+{
   unsigned long currentTime = millis();
   static unsigned long lastCheckTime = 0;
 
   float lastDistance = -1;
 
-  if (currentTime - lastCheckTime >= 500){
+  // アラーム活性状態に応じて間隔を動的に変更
+  bool isAnyAlarmActive = alarms[0].active || alarms[1].active;
+  unsigned long interval = isAnyAlarmActive ? CHECK_INTERVAL_MS : IDLE_CHECK_INTERVAL_MS;
+
+  if (currentTime - lastCheckTime >= interval)
+  {
     checkAlarm();
-    if (isAlarm1Active || isAlarm2Active) {
+    if (isAnyAlarmActive)
+    {
       lastDistance = readDistance();
-    } else {
+    }
+    else
+    {
       lastDistance = -1;
     }
     lastCheckTime = currentTime;
   }
 
   WiFiClient client = server.available();
-  if (client) {
+  if (client)
+  {
     String currentLine = "";
-    const char* weekKeys1[] = {"CHK_MON1", "CHK_TUE1", "CHK_WED1", "CHK_THU1", "CHK_FRI1", "CHK_SAT1", "CHK_SUN1" };
-    const char* weekKeys2[] = {"CHK_MON2", "CHK_TUE2", "CHK_WED2", "CHK_THU2", "CHK_FRI2", "CHK_SAT2", "CHK_SUN2" };
-    while (client.connected()) {
-      if (client.available()) {
+    const char *weekKeys[2][7] = {
+        {"CHK_MON1", "CHK_TUE1", "CHK_WED1", "CHK_THU1", "CHK_FRI1", "CHK_SAT1", "CHK_SUN1"},
+        {"CHK_MON2", "CHK_TUE2", "CHK_WED2", "CHK_THU2", "CHK_FRI2", "CHK_SAT2", "CHK_SUN2"}};
+    while (client.connected())
+    {
+      if (client.available())
+      {
         char c = client.read();
-        if (c == '\n') {
-          if (currentLine.length() == 0) {
+        if (c == '\n')
+        {
+          if (currentLine.length() == 0)
+          {
             client.println("HTTP/1.1 200 OK");
             client.println("Content-type:text/html");
             client.println("Connection: close");
             client.println();
             String response = String(index_html);
-            if (repeat1_enabled) {
-                response.replace("CHK_R1", "checked"); 
-            } else {
-                response.replace("CHK_R1", ""); 
-            }
-            if (repeat2_enabled) {
-                response.replace("CHK_R2", "checked"); 
-            } else {
-                response.replace("CHK_R2", ""); 
-            }
+            for (int i = 0; i < 2; i++)
+            {
+              AlarmConfig &alarm = alarms[i];
 
-            // アラーム1の置換
-            if (alarm1_h == -1) {
-                response.replace("VAL_H1", ""); // -1なら空文字
-                response.replace("VAL_M1", "");
-            } else {
-                response.replace("VAL_H1", String(alarm1_h));
-                response.replace("VAL_M1", String(alarm1_m));
-            }
-
-            // アラーム2の置換
-            if (alarm2_h == -1) {
-                response.replace("VAL_H2", "");
-                response.replace("VAL_M2", "");
-            } else {
-                response.replace("VAL_H2", String(alarm2_h));
-                response.replace("VAL_M2", String(alarm2_m));
-            }
-
-            // アラーム1の繰り返し曜日の置換
-            for (int i = 0; i < 7; i++){
-              if (alarm1_days[i]) {
-                response.replace(weekKeys1[i], "checked");
-              } else {
-                response.replace(weekKeys1[i], "");
+              // 繰り返しフラグ
+              char repeatKey[8];
+              sprintf(repeatKey, "CHK_R%d", i + 1);
+              if (alarm.repeatEnabled)
+              {
+                response.replace(repeatKey, "checked");
               }
-            }
+              else
+              {
+                response.replace(repeatKey, "");
+              }
 
-            // アラーム2の繰り返し曜日の置換
-            for (int i = 0; i < 7; i++){
-              if (alarm2_days[i]) {
-                response.replace(weekKeys2[i], "checked");
-              } else {
-                response.replace(weekKeys2[i], "");
+              // 時間・分
+              char hKey[8], mKey[8];
+              sprintf(hKey, "VAL_H%d", i + 1);
+              sprintf(mKey, "VAL_M%d", i + 1);
+              if (alarm.hour == -1)
+              {
+                response.replace(hKey, "");
+                response.replace(mKey, "");
+              }
+              else
+              {
+                response.replace(hKey, String(alarm.hour));
+                response.replace(mKey, String(alarm.minute));
+              }
+
+              // 曜日
+              for (int d = 0; d < 7; d++)
+              {
+                if (alarm.days[d])
+                {
+                  response.replace(weekKeys[i][d], "checked");
+                }
+                else
+                {
+                  response.replace(weekKeys[i][d], "");
+                }
               }
             }
 
             client.print(response);
             client.println();
             break;
-          } else {
+          }
+          else
+          {
             parseAlarmSetUp(currentLine);
             currentLine = "";
           }
-        } else if (c != '\r'){
+        }
+        else if (c != '\r')
+        {
           currentLine += c;
         }
       }
@@ -251,70 +346,78 @@ void loop() {
     client.stop();
   }
 
-  if ((isAlarm1Active || isAlarm2Active) && lastDistance > 0 && lastDistance < 5) {
-    stopAlarm();
-    delay(20);
-  } else if (isAlarm1Active) {
-    playMusicWithAnime(SONG_1);
-    updateLEDs(colorRGB1, 2);
-  } else if (isAlarm2Active) {
-    playMusicWithAnime(SONG_2);
-    updateLEDs(colorRGB2, 3);
-  } else {
+  if ((alarms[0].active || alarms[1].active) && lastDistance > 0 && lastDistance < DISTANCE_THRESHOLD_CM)
+  {
     stopAlarm();
     delay(20);
   }
-  if(!isDisplayOn) {
-    delay(1000);
+  else if (alarms[0].active)
+  {
+    playMusicWithAnime(*alarms[0].melody);
+    updateLEDs(alarms[0].ledColors, alarms[0].ledColorCount);
+  }
+  else if (alarms[1].active)
+  {
+    playMusicWithAnime(*alarms[1].melody);
+    updateLEDs(alarms[1].ledColors, alarms[1].ledColorCount);
+  }
+  else
+  {
+    stopAlarm();
+    delay(20);
+  }
+  if (!isDisplayOn)
+  {
+    delay(CHECK_INTERVAL_MS);
   }
 }
 
 // アラームの時間か判定する関数
-void checkAlarm() {
+void checkAlarm()
+{
   timeClient.update();
   int currentH = timeClient.getHours();
   int currentM = timeClient.getMinutes();
   int currentW = timeClient.getDay();
   checkForOLED(currentH, currentM);
-  if (currentM != lastCheckedMinute) {
-    if (!isAlarm1Active && !isAlarm2Active) {
-      bool isMatch1 = true;
-      bool isMatch2 = true;
-      if (repeat1_enabled) {
-        int idx1 = (currentW == 0) ? 6 : currentW - 1;
-        isMatch1 = alarm1_days[idx1];
-      }
-      if (repeat2_enabled) {
-        int idx2 = (currentW == 0) ? 6 : currentW - 1;
-        isMatch2 = alarm2_days[idx2];
-      }
-      if (isMatch1 && currentH == alarm1_h && currentM == alarm1_m) {
-        isAlarm1Active = true;
-          if (!isDisplayOn) {
+
+  if (currentM != lastCheckedMinute)
+  {
+    if (!alarms[0].active && !alarms[1].active)
+    {
+      for (int i = 0; i < 2; i++)
+      {
+        AlarmConfig &alarm = alarms[i];
+        if (alarm.hour == -1)
+          continue;
+
+        bool isMatch = true;
+        if (alarm.repeatEnabled)
+        {
+          int idx = (currentW == 0) ? 6 : currentW - 1;
+          isMatch = alarm.days[idx];
+        }
+
+        if (isMatch && currentH == alarm.hour && currentM == alarm.minute)
+        {
+          alarm.active = true;
+          if (!isDisplayOn)
+          {
             isDisplayOn = true;
             display.ssd1306_command(SSD1306_DISPLAYON);
           }
-        currentNoteIndex = 0;
-        lastCheckedMinute = currentM;
-        if (!repeat1_enabled) {
-          alarm1_h = -1;
-          alarm1_m = -1;
-          repeat1_enabled = false;
-          for (int i=0; i<7; i++) alarm1_days[i] = false;
-        }
-      } else if (isMatch2 && currentH == alarm2_h && currentM == alarm2_m) {
-        isAlarm2Active = true;
-        currentNoteIndex = 0;
-        if (!isDisplayOn) {
-          isDisplayOn = true;
-          display.ssd1306_command(SSD1306_DISPLAYON);
-        }
-        lastCheckedMinute = currentM;
-        if (!repeat2_enabled) {
-          alarm2_h = -1;
-          alarm2_m = -1;
-          repeat2_enabled = false;
-          for (int i=0; i<7; i++) alarm2_days[i] = false;
+          currentNoteIndex = 0;
+          lastCheckedMinute = currentM;
+
+          if (!alarm.repeatEnabled)
+          {
+            alarm.hour = -1;
+            alarm.minute = -1;
+            alarm.repeatEnabled = false;
+            for (int j = 0; j < 7; j++)
+              alarm.days[j] = false;
+          }
+          break;
         }
       }
     }
@@ -322,134 +425,115 @@ void checkAlarm() {
 }
 
 // OLEDのナイトモード
-void checkForOLED(int currentH, int currentM){
-  if (currentH == 23 && currentM == 0){
+void checkForOLED(int currentH, int currentM)
+{
+  if (currentH == 23 && currentM == 0)
+  {
     display.ssd1306_command(SSD1306_SETCONTRAST);
-    display.ssd1306_command(dark);
+    display.ssd1306_command(OLED_CONTRAST_DARK);
   }
-  if (currentH == 0 && currentM == 0) {
-    display.ssd1306_command(SSD1306_DISPLAYOFF); 
+  if (currentH == 0 && currentM == 0)
+  {
+    display.ssd1306_command(SSD1306_DISPLAYOFF);
     isDisplayOn = false;
   }
-  if (currentH == 5 && currentM == 0) {
+  if (currentH == 5 && currentM == 0)
+  {
     display.ssd1306_command(SSD1306_DISPLAYON);
     isDisplayOn = true;
     displayData();
-  } 
-  if (currentH == 6 && currentM == 0 ){
+  }
+  if (currentH == 6 && currentM == 0)
+  {
     display.ssd1306_command(SSD1306_SETCONTRAST);
-    display.ssd1306_command(light); 
+    display.ssd1306_command(OLED_CONTRAST_LIGHT);
   }
 }
 
-// 繰り返しの有無や時間を保存する関数
-void parseAlarmSetUp(String line) {
-  if (line.indexOf("h1=") != -1) {
-    // 繰り返しの判定
-    repeat1_enabled = (line.indexOf("repeat1=on") != -1);
-    if (repeat1_enabled) {
-      alarm1_days[0] = (line.indexOf("mon1=on") != -1);
-      alarm1_days[1] = (line.indexOf("tue1=on") != -1);
-      alarm1_days[2] = (line.indexOf("wed1=on") != -1);
-      alarm1_days[3] = (line.indexOf("thu1=on") != -1);
-      alarm1_days[4] = (line.indexOf("fri1=on") != -1);
-      alarm1_days[5] = (line.indexOf("sat1=on") != -1);
-      alarm1_days[6] = (line.indexOf("sun1=on") != -1);
-    } else {
-      for (int i = 0; i < 7; i++) alarm1_days[i] = false;
-    }
+// アラーム設定を解析する関数
+void parseAlarmSetUp(String line)
+{
+  for (int alarmIdx = 0; alarmIdx < 2; alarmIdx++)
+  {
+    char hKey[6], mKey[6], repeatKey[8];
+    sprintf(hKey, "h%d=", alarmIdx + 1);
+    sprintf(mKey, "m%d=", alarmIdx + 1);
+    sprintf(repeatKey, "repeat%d=", alarmIdx + 1);
 
-    // 数値の切り出し
-    int h1Pos = line.indexOf("h1=") + 3;
-    int h1End = line.indexOf("&", h1Pos);
-    if (h1End == -1) h1End = line.indexOf(" ", h1Pos);
-    
-    int m1Pos = line.indexOf("m1=") + 3;
-    int m1End = line.indexOf("&", m1Pos);
-    if (m1End == -1) m1End = line.indexOf(" ", m1Pos);
+    if (line.indexOf(hKey) != -1)
+    {
+      AlarmConfig &alarm = alarms[alarmIdx];
 
-    if (h1Pos > 2 && m1Pos > 2) { // 確実に見つかっている場合のみ代入
-      alarm1_h = line.substring(h1Pos, h1End).toInt();
-      alarm1_m = line.substring(m1Pos, m1End).toInt();
+      // 繰り返し判定
+      String repeatParam = String(repeatKey) + "on";
+      alarm.repeatEnabled = (line.indexOf(repeatParam) != -1);
+
+      if (alarm.repeatEnabled)
+      {
+        const char *days[7] = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"};
+        for (int i = 0; i < 7; i++)
+        {
+          char dayKey[8];
+          sprintf(dayKey, "%s%d=", days[i], alarmIdx + 1);
+          String dayParam = String(dayKey) + "on";
+          alarm.days[i] = (line.indexOf(dayParam) != -1);
+        }
+      }
+      else
+      {
+        for (int i = 0; i < 7; i++)
+          alarm.days[i] = false;
+      }
+
+      // 数値の切り出し
+      int hPos = line.indexOf(hKey) + strlen(hKey);
+      int hEnd = line.indexOf("&", hPos);
+      if (hEnd == -1)
+        hEnd = line.indexOf(" ", hPos);
+
+      int mPos = line.indexOf(mKey) + strlen(mKey);
+      int mEnd = line.indexOf("&", mPos);
+      if (mEnd == -1)
+        mEnd = line.indexOf(" ", mPos);
+
+      if (hPos > 2 && mPos > 2)
+      {
+        int h = line.substring(hPos, hEnd).toInt();
+        int m = line.substring(mPos, mEnd).toInt();
+        // 範囲チェック
+        if (h >= 0 && h <= 23 && m >= 0 && m <= 59)
+        {
+          alarm.hour = h;
+          alarm.minute = m;
+        }
+      }
+      break;
     }
   }
-
-  // アラーム2の解析
-  if (line.indexOf("h2=") != -1) {
-    repeat2_enabled = (line.indexOf("repeat2=on") != -1);
-    if (repeat2_enabled) {
-      alarm2_days[0] = (line.indexOf("mon2=on") != -1);
-      alarm2_days[1] = (line.indexOf("tue2=on") != -1);
-      alarm2_days[2] = (line.indexOf("wed2=on") != -1);
-      alarm2_days[3] = (line.indexOf("thu2=on") != -1);
-      alarm2_days[4] = (line.indexOf("fri2=on") != -1);
-      alarm2_days[5] = (line.indexOf("sat2=on") != -1);
-      alarm2_days[6] = (line.indexOf("sun2=on") != -1);
-    } else {
-      for (int i = 0; i < 7; i++) alarm2_days[i] = false;
-    }
-
-    int h2Pos = line.indexOf("h2=") + 3;
-    int h2End = line.indexOf("&", h2Pos);
-    if (h2End == -1) h2End = line.indexOf(" ", h2Pos);
-
-    int m2Pos = line.indexOf("m2=") + 3;
-    int m2End = line.indexOf("&", m2Pos);
-    if (m2End == -1) m2End = line.indexOf(" ", m2Pos);
-
-    if (h2Pos > 2 && m2Pos > 2) {
-      alarm2_h = line.substring(h2Pos, h2End).toInt();
-      alarm2_m = line.substring(m2Pos, m2End).toInt();
-    }
-  }
-  // if (line.indexOf("h1=") != -1) {
-  //   Serial.print("アラーム1 設定時刻: ");
-  //   Serial.print(alarm1_h);
-  //   Serial.print(":");
-  //   Serial.println(alarm1_m);
-  //   Serial.print("繰り返し: ");
-  //   Serial.println(repeat1_enabled ? "ON" : "OFF");
-  //   if (repeat1_enabled) {
-  //     Serial.print("曜日: ");
-  //     const char *dNames[] = {"月", "火", "水", "木", "金", "土", "日"};
-  //     for (int i = 0; i < 7; i++) {
-  //       if (alarm1_days[i]) Serial.print(dNames[i]);
-  //     }
-  //   }
-  //   Serial.println();
-  // }
-  // if (line.indexOf("h2=") != -1) {
-  //   Serial.print("アラーム2 設定時刻: ");
-  //   Serial.print(alarm2_h);
-  //   Serial.print(":");
-  //   Serial.println(alarm2_m);
-  //   Serial.print("繰り返し: ");
-  //   Serial.println(repeat2_enabled ? "ON" : "OFF");
-  //   if (repeat2_enabled) {
-  //     Serial.print("曜日: ");
-  //     const char *dNames[] = {"月", "火", "水", "木", "金", "土", "日"};
-  //     for (int i = 0; i < 7; i++) {
-  //       if (alarm2_days[i])   Serial.print(dNames[i]);
-  //     }
-  //   }
-  //   Serial.println();
-  // }
 }
 
 // アラームとアニメを流す関数
-void playMusicWithAnime(const ALARM &melody){
+void playMusicWithAnime(const ALARM &melody)
+{
   unsigned long currentTime = millis();
 
-  if (&melody == &SONG_1) {
+  if (&melody == &SONG_1)
+  {
     rabitAnime(currentTime);
-  } else if (&melody == &SONG_2) {
+  }
+  else if (&melody == &SONG_2)
+  {
     sakuraAnime(currentTime);
-  } else {
+  }
+  else
+  {
     commonAnime(currentTime);
   }
 
-  if (isWaitingNextLoop) {
-    if (currentTime - lastNoteTime >= waitTime) {
+  if (isWaitingNextLoop)
+  {
+    if (currentTime - lastNoteTime >= WAIT_TIME_MS)
+    {
       isWaitingNextLoop = false;
       currentNoteIndex = 0;
       lastNoteTime = currentTime;
@@ -459,134 +543,186 @@ void playMusicWithAnime(const ALARM &melody){
   int noteDuration = melody.tempo / melody.durations[currentNoteIndex];
   int soundActiveDuration = (melody.slur[currentNoteIndex] == 1) ? noteDuration : ((noteDuration * 9) / 10);
 
-  if (currentTime - lastNoteTime >= soundActiveDuration) {
+  if (currentTime - lastNoteTime >= soundActiveDuration)
+  {
     wave.stop();
   }
-  if (currentTime - lastNoteTime >= noteDuration) {
+  if (currentTime - lastNoteTime >= noteDuration)
+  {
     lastNoteTime = currentTime;
     currentNoteIndex++;
-    if (currentNoteIndex >= melody.length) {
+    if (currentNoteIndex >= melody.length)
+    {
       wave.stop();
       isWaitingNextLoop = true;
       return;
     }
-    if (melody.notes[currentNoteIndex] != REST) {
+    if (melody.notes[currentNoteIndex] != REST)
+    {
       wave.freq((float)melody.notes[currentNoteIndex]);
-    } else {
+    }
+    else
+    {
       wave.stop();
     }
   }
 }
 
+// アニメーション管理構造体
+struct AnimationState
+{
+  int currentFrame;
+  unsigned long lastUpdateTime;
+  AnimationState() : currentFrame(0), lastUpdateTime(0) {}
+};
+
 // 共通アニメーションを流す関数
-void commonAnime(unsigned long currentTime) {
-  if (currentTime - lastAnimTime >= 500){
-    lastAnimTime = currentTime;
+void commonAnime(unsigned long currentTime)
+{
+  static AnimationState state;
+  if (currentTime - state.lastUpdateTime >= ANIMATION_INTERVAL_MS)
+  {
+    state.lastUpdateTime = currentTime;
     display.clearDisplay();
 
-    display.drawBitmap(0, 0, circuit_commonAnime[currentFrame], 128, 64, WHITE);
+    display.drawBitmap(0, 0, circuit_commonAnime[state.currentFrame], 128, 64, WHITE);
 
     display.display();
 
-    currentFrame = (currentFrame + 1) % commonAnime_frames;
+    state.currentFrame = (state.currentFrame + 1) % commonAnime_frames;
   }
 }
 
 // 回る空うさぎ専用アニメーション
-void rabitAnime(unsigned long currentTime) {
-  if (currentTime - lastAnimTime >= 750){
-    lastAnimTime = currentTime;
+void rabitAnime(unsigned long currentTime)
+{
+  static AnimationState state;
+  if (currentTime - state.lastUpdateTime >= RABBIT_ANIMATION_INTERVAL_MS)
+  {
+    state.lastUpdateTime = currentTime;
     display.clearDisplay();
 
-    display.drawBitmap(0, 0, circuit_rabitAnime[currentFrame], 128, 64, WHITE);
+    display.drawBitmap(0, 0, circuit_rabitAnime[state.currentFrame], 128, 64, WHITE);
 
     display.display();
 
-    currentFrame = (currentFrame + 1) % rabitAnime_frames;
+    state.currentFrame = (state.currentFrame + 1) % rabitAnime_frames;
   }
 }
 
 // 千本桜専用アニメーション
-void sakuraAnime(unsigned long currentTime) {
-  if (currentTime - lastAnimTime >= 500){
-    lastAnimTime = currentTime;
+void sakuraAnime(unsigned long currentTime)
+{
+  static AnimationState state;
+  if (currentTime - state.lastUpdateTime >= SAKURA_ANIMATION_INTERVAL_MS)
+  {
+    state.lastUpdateTime = currentTime;
     display.clearDisplay();
 
-    display.drawBitmap(0, 0, circuit_sakuraAnime[currentFrame], 128, 64, WHITE);
+    display.drawBitmap(0, 0, circuit_sakuraAnime[state.currentFrame], 128, 64, WHITE);
 
     display.display();
 
-    currentFrame = (currentFrame + 1) % sakuraAnime_frames;
+    state.currentFrame = (state.currentFrame + 1) % sakuraAnime_frames;
   }
 }
 
 // LEDストリップを光らせる関数
-void updateLEDs(int colorRGB[][3], int colorNum) {
+void updateLEDs(const int colorRGB[][3], int colorNum)
+{
   unsigned long currentTime = millis();
-  if (currentTime - lastLEDTime >= 500){
+  if (currentTime - lastLEDTime >= CHECK_INTERVAL_MS)
+  {
     lastLEDTime = currentTime;
     targetIdx = (targetIdx + 1) % colorNum;
 
-    for (int i=0; i < NUM_LEDS; i++) {
-      leds[i]=CRGB(
-        colorRGB[targetIdx][0],
-        colorRGB[targetIdx][1],
-        colorRGB[targetIdx][2]
-      );
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+      leds[i] = CRGB(
+          colorRGB[targetIdx][0],
+          colorRGB[targetIdx][1],
+          colorRGB[targetIdx][2]);
     }
     FastLED.show();
   }
 }
 
 // アラームを止めたときの関数
-void stopAlarm() {
+void stopAlarm()
+{
   wave.stop();
   analogWrite(A0, 0);
-  isAlarm1Active = false;
-  isAlarm2Active = false;
+  alarms[0].active = false;
+  alarms[1].active = false;
   currentNoteIndex = 0;
   lastNoteTime = 0;
-  for(int i=0; i<NUM_LEDS; i++) leds[i] = CRGB::Black;
+  for (int i = 0; i < NUM_LEDS; i++)
+    leds[i] = CRGB::Black;
   FastLED.show();
   time_t rawtime = (time_t)timeClient.getEpochTime();
-  struct tm * ti = localtime(&rawtime);
-  if (ti->tm_hour >= 0 && ti->tm_hour < 5) {
+  struct tm *ti = localtime(&rawtime);
+  if (ti->tm_hour >= 0 && ti->tm_hour < 5)
+  {
     display.ssd1306_command(SSD1306_DISPLAYOFF);
     isDisplayOn = false;
-  } else {
+  }
+  else
+  {
+    // 前回表示時刻をリセットして強制更新
+    lastDisplayedHour = -1;
+    lastDisplayedMinute = -1;
     displayData();
   }
 }
 
 // 超音波モジュールの値から距離を計算する関数
-float readDistance() {
-  digitalWrite(trigPin, LOW);   // トリガーピンを LOW にしてパルスをリセット
-  delayMicroseconds(2);         // 2 マイクロ秒待つ
-  digitalWrite(trigPin, HIGH);  // 10 マイクロ秒のパルスを送信
+float readDistance()
+{
+  digitalWrite(trigPin, LOW);  // トリガーピンを LOW にしてパルスをリセット
+  delayMicroseconds(2);        // 2 マイクロ秒待つ
+  digitalWrite(trigPin, HIGH); // 10 マイクロ秒のパルスを送信
   delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);   // トリガーピンを LOW に戻す
-  float distance = pulseIn(echoPin, HIGH) / 58.00;  // 計算式: (音速 340m/s → 1us あたりの距離) / 2
+  digitalWrite(trigPin, LOW);                      // トリガーピンを LOW に戻す
+  float distance = pulseIn(echoPin, HIGH) / 58.00; // 計算式: (音速 340m/s → 1us あたりの距離) / 2
   return distance;
 }
 
 // ディスプレイに表示させる関数
-void displayData() {
+void displayData()
+{
+  time_t rawtime = (time_t)timeClient.getEpochTime();
+  struct tm *ti = localtime(&rawtime);
+
+  if (ti == NULL)
+    return;
+
+  // 時刻が変わっていなければ更新しない
+  if (ti->tm_hour == lastDisplayedHour && ti->tm_min == lastDisplayedMinute)
+  {
+    return;
+  }
+
+  lastDisplayedHour = ti->tm_hour;
+  lastDisplayedMinute = ti->tm_min;
+
   display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);  // 白色で文字を描画
+  display.setTextColor(SSD1306_WHITE); // 白色で文字を描画
   qrdata();
   dateTimeData();
   display.display();
 }
 
 // 日時を管理する関数
-void dateTimeData() {
+void dateTimeData()
+{
   // 年月日を取得
   time_t rawtime = (time_t)timeClient.getEpochTime();
-  struct tm * ti = localtime(&rawtime);
+  struct tm *ti = localtime(&rawtime);
 
-  if (ti == NULL) return;
+  if (ti == NULL)
+    return;
 
-  int textX = 66 ;
+  int textX = 66;
 
   display.setTextSize(1);
   display.setCursor(textX, 10);
@@ -595,45 +731,52 @@ void dateTimeData() {
 
   display.setCursor(textX, 20);
 
-  if(ti->tm_mon + 1 < 10) display.print("0");
+  if (ti->tm_mon + 1 < 10)
+    display.print("0");
   display.print(ti->tm_mon + 1);
   display.print("/");
-  if(ti->tm_mday < 10) display.print("0");
+  if (ti->tm_mday < 10)
+    display.print("0");
   display.print(ti->tm_mday);
 
   display.print(" ");
 
   // 曜日を表示
-  const char* daysOfTheWeek[7] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+  const char *daysOfTheWeek[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
   display.print(daysOfTheWeek[ti->tm_wday]);
 
   display.setTextSize(2);
   display.setCursor(textX, 35);
 
   // 時を表示（10未満は0埋め）
-  if (ti->tm_hour < 10) display.print("0");
+  if (ti->tm_hour < 10)
+    display.print("0");
   display.print(ti->tm_hour);
 
   display.print(":");
 
   // 分を表示（10未満は0埋め）
-  if (ti->tm_min < 10) display.print("0");
+  if (ti->tm_min < 10)
+    display.print("0");
   display.print(ti->tm_min);
 }
 
 // QRコードを作る関数
-void qrdata() {
+void qrdata()
+{
   int scale = 2; // 1セルを2×2pxで描画
   int qroffsetX = 0, qroffsetY = (SCREEN_HEIGHT - (qrcode.size * scale)) / 2;
 
-  for (int y = 0; y < qrcode.size; y++) {
-    for (int x = 0; x < qrcode.size; x++) {
-      if (qrcode_getModule(&qrcode, x, y)) {
+  for (int y = 0; y < qrcode.size; y++)
+  {
+    for (int x = 0; x < qrcode.size; x++)
+    {
+      if (qrcode_getModule(&qrcode, x, y))
+      {
         display.fillRect(
-          qroffsetX + x * scale,
-          qroffsetY + y * scale,
-          scale, scale, SSD1306_WHITE
-        );
+            qroffsetX + x * scale,
+            qroffsetY + y * scale,
+            scale, scale, SSD1306_WHITE);
       }
     }
   }
