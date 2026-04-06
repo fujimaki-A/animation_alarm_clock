@@ -214,11 +214,7 @@ void setup()
     delay(NTP_RETRY_INTERVAL_MS); // サーバーに負荷をかけないよう待機
   }
 
-  // NTP同期後にWiFiを切断（省電力化）
-  if (ntpSuccess)
-  {
-    WiFi.disconnect();
-  }
+  // Wi-Fiを常時接続に維持（切断しない）
 
   // Serial.print("現在の時刻（秒）: ");
   // Serial.println(timeClient.getEpochTime());
@@ -272,27 +268,6 @@ void loop()
   }
 
   // 超音波検知でWiFi再接続（手をかざす）
-  if (WiFi.status() != WL_CONNECTED &&
-      currentTime - lastWiFiReconnectAttempt >= WIFI_RECONNECT_COOLDOWN_MS)
-  {
-    float distance = readDistance();
-    if (distance > 0 && distance < DISTANCE_THRESHOLD_CM)
-    {
-      WiFi.begin(ssid, pass);
-      unsigned long wifiStartTime = millis();
-      while (WiFi.status() != WL_CONNECTED && millis() - wifiStartTime < WIFI_TIMEOUT_MS)
-      {
-        delay(WIFI_RETRY_INTERVAL_MS);
-      }
-      if (WiFi.status() == WL_CONNECTED)
-      {
-        // QRコードを更新
-        String url = "http://" + WiFi.localIP().toString();
-        qrcode_initText(&qrcode, qrcodeData, 3, ECC_LOW, url.c_str());
-        lastWiFiReconnectAttempt = currentTime;
-      }
-    }
-  }
   if (WiFi.status() == WL_CONNECTED)
   {
     WiFiClient client = server.available();
