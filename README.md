@@ -4,7 +4,9 @@
 
 Webブラウザから設定した時刻に合わせて、メロディの再生とドット絵アニメーションが連動する多機能型アラーム時計
 
-[アラームの動作](https://youtu.be/uBGSTO8ovKI)
+<a href="https://youtu.be/uBGSTO8ovKI" target="_blank" rel="noopener noreferrer">
+  アラームの動作
+</a>
 
 ## 主な機能
 
